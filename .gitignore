@@ -1,0 +1,39 @@
+CHAT.md
+
+# Dependencies
+node_modules/
+.venv/
+
+# Environment — never commit secrets
+.env
+.env.local
+!.env.example
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# Build output
+dist/
+tsconfig.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+
+# Hugging Face / model cache (if mounted locally instead of in a volume)
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo

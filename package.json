@@ -1,0 +1,5 @@
+{
+  "name": "simpatient",
+  "workspaces": ["packages/api", "packages/frontend"],
+  "private": true
+}

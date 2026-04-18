@@ -1,0 +1,19 @@
+services:
+  # nemotron uses CPU build even in GPU mode — torch.stft / cuFFT triggers
+  # CUFFT_INTERNAL_ERROR on RTX A6000; CPU inference is fast enough for STT
+
+  ollama:
+    environment:
+      OLLAMA_HOST: "0.0.0.0"
+      CUDA_VISIBLE_DEVICES: "0"
+      OLLAMA_LLM_LIBRARY: "cuda_v12"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # kokoro uses CPU image even in GPU mode — the GPU kokoro image triggers
+  # CUFFT_INTERNAL_ERROR on RTX A6000 via torch.stft; CPU is fast enough for TTS

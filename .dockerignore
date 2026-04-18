@@ -1,0 +1,11 @@
+node_modules
+packages/api/node_modules
+packages/frontend/node_modules
+packages/api/dev.db
+packages/api/dev.db-shm
+packages/api/dev.db-wal
+packages/frontend/dist
+services/livekit_agent/.venv
+**/__pycache__
+**/*.py[cod]
+.git
