@@ -49,8 +49,6 @@ services:
       OLLAMA_HOST: "0.0.0.0"
     volumes:
       - ollama-models:/root/.ollama
-    ports:
-      - "11434:11434"
     networks: [agent_network]
     entrypoint: ["/bin/sh", "-c", "ollama serve & until curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; do sleep 2; done && ollama pull ${OLLAMA_MODEL:-gemma4:e2b} && wait"]
     healthcheck:

@@ -16,12 +16,12 @@ import type { TokenResponse, TranscriptEntry } from '../types/patient'
 
 function AgentStatePill({ state }: { state: string }) {
   const config: Record<string, { label: string; bg: string; dot: string; pulse: boolean }> = {
-    connecting:   { label: 'Connecting…',      bg: 'bg-yellow-100 text-yellow-800 border-yellow-200', dot: 'bg-yellow-500', pulse: true },
+    connecting: { label: 'Connecting…', bg: 'bg-yellow-100 text-yellow-800 border-yellow-200', dot: 'bg-yellow-500', pulse: true },
     initializing: { label: 'Patient joining…', bg: 'bg-yellow-100 text-yellow-800 border-yellow-200', dot: 'bg-yellow-500', pulse: true },
-    listening:    { label: 'Listening',         bg: 'bg-green-100  text-green-800  border-green-200',  dot: 'bg-green-500',  pulse: true },
-    thinking:     { label: 'Thinking…',         bg: 'bg-blue-100   text-blue-800   border-blue-200',   dot: 'bg-blue-500',   pulse: true },
-    speaking:     { label: 'Patient speaking',  bg: 'bg-purple-100 text-purple-800 border-purple-200', dot: 'bg-purple-500', pulse: true },
-    disconnected: { label: 'Disconnected',      bg: 'bg-gray-100   text-gray-600   border-gray-200',   dot: 'bg-gray-400',   pulse: false },
+    listening: { label: 'Listening', bg: 'bg-green-100  text-green-800  border-green-200', dot: 'bg-green-500', pulse: true },
+    thinking: { label: 'Thinking…', bg: 'bg-blue-100   text-blue-800   border-blue-200', dot: 'bg-blue-500', pulse: true },
+    speaking: { label: 'Patient speaking', bg: 'bg-purple-100 text-purple-800 border-purple-200', dot: 'bg-purple-500', pulse: true },
+    disconnected: { label: 'Disconnected', bg: 'bg-gray-100   text-gray-600   border-gray-200', dot: 'bg-gray-400', pulse: false },
   }
   const c = config[state] ?? config.disconnected
   return (
@@ -37,9 +37,8 @@ function AgentStatePill({ state }: { state: string }) {
 function SessionBanner({ patient, state }: { patient: TokenResponse['patient']; state: string }) {
   const isLive = state !== 'disconnected'
   return (
-    <div className={`px-4 py-2 flex items-center gap-3 text-sm font-medium border-b ${
-      isLive ? 'bg-green-50 border-green-200 text-green-900' : 'bg-gray-50 border-gray-200 text-gray-600'
-    }`}>
+    <div className={`px-4 py-2 flex items-center gap-3 text-sm font-medium border-b ${isLive ? 'bg-green-50 border-green-200 text-green-900' : 'bg-gray-50 border-gray-200 text-gray-600'
+      }`}>
       <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isLive ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
       {isLive
         ? <>Session active &mdash; simulating <strong>{patient.name}</strong></>
@@ -86,8 +85,9 @@ function SessionInner({ details, onLeave }: SessionInnerProps) {
   }, [room])
 
   const toggleMic = useCallback(async () => {
-    await room.localParticipant.setMicrophoneEnabled(!isMuted)
-    setIsMuted((m) => !m)
+    const nextMuted = !isMuted
+    await room.localParticipant.setMicrophoneEnabled(!nextMuted)
+    setIsMuted(nextMuted)
   }, [room, isMuted])
 
   const handleLeave = useCallback(() => {
@@ -150,11 +150,10 @@ function SessionInner({ details, onLeave }: SessionInnerProps) {
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Your Microphone</p>
               <button
                 onClick={toggleMic}
-                className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${
-                  isMuted
-                    ? 'bg-red-100 text-red-700 hover:bg-red-200 border border-red-200'
-                    : 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200'
-                }`}
+                className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${isMuted
+                  ? 'bg-red-100 text-red-700 hover:bg-red-200 border border-red-200'
+                  : 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200'
+                  }`}
               >
                 <span className={`w-2 h-2 rounded-full ${isMuted ? 'bg-red-500' : 'bg-green-500 animate-pulse'}`} />
                 {isMuted ? 'Mic muted — tap to unmute' : 'Mic active — tap to mute'}
