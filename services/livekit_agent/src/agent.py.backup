@@ -33,8 +33,8 @@ logging.basicConfig(level=logging.INFO)
 API_BASE = os.environ.get("API_BASE_URL", "http://api:4000")
 STT_BASE = os.environ.get("STT_BASE_URL", "http://nemotron:8000/v1")
 STT_MODEL = os.environ.get("STT_MODEL", "nemotron-speech-streaming")
-LLAMA_BASE = os.environ.get("LLAMA_BASE_URL", "http://llama:11434/v1")
-LLAMA_MODEL = os.environ.get("LLAMA_MODEL", "gemma-4-E2B")
+OLLAMA_BASE = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434/v1")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:e2b")
 KOKORO_BASE = os.environ.get("KOKORO_BASE_URL", "http://kokoro:8880/v1")
 KOKORO_VOICE = os.environ.get("KOKORO_VOICE", "af_nova")
 
@@ -163,10 +163,9 @@ async def patient_session(ctx: JobContext):
             api_key="no-key",
             model=STT_MODEL,
         ),
-        llm=openai.LLM(
-            base_url=LLAMA_BASE,
-            model=LLAMA_MODEL,
-            api_key="no-key",
+        llm=openai.LLM.with_ollama(
+            base_url=OLLAMA_BASE,
+            model=OLLAMA_MODEL,
         ),
         tts=openai.TTS(
             base_url=KOKORO_BASE,
@@ -176,6 +175,7 @@ async def patient_session(ctx: JobContext):
             response_format="pcm",
         ),
         turn_handling=TurnHandlingOptions(turn_detection=MultilingualModel()),
+        preemptive_generation=True,
     )
 
     # Hook transcript events to save to DB

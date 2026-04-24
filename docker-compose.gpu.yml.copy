@@ -2,12 +2,11 @@ services:
   # nemotron uses CPU build even in GPU mode — torch.stft / cuFFT triggers
   # CUFFT_INTERNAL_ERROR on RTX A6000; CPU inference is fast enough for STT
 
-  llama:
-    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+  ollama:
     environment:
-      LLAMA_HOST: "0.0.0.0"
+      OLLAMA_HOST: "0.0.0.0"
       CUDA_VISIBLE_DEVICES: "0"
-      LLAMA_LLM_LIBRARY: "cuda_v12"
+      OLLAMA_LLM_LIBRARY: "cuda_v12"
     deploy:
       resources:
         reservations:

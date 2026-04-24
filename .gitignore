@@ -1,5 +1,5 @@
 CHAT.md
-
+services/llama/*
 # Dependencies
 node_modules/
 .venv/

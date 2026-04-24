@@ -12,10 +12,9 @@ services:
               count: all
               capabilities: [gpu]
 
-  llama:
-    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+  ollama:
     environment:
-      LLAMA_HOST: "0.0.0.0"
+      OLLAMA_HOST: "0.0.0.0"
       CUDA_VISIBLE_DEVICES: "0"
     deploy:
       resources:

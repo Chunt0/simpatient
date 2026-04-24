@@ -3,6 +3,7 @@ networks:
     driver: bridge
 
 volumes:
+  ollama-models:
   nemotron-cache:
   db-data:
 
@@ -42,36 +43,21 @@ services:
       retries: 120
       start_period: 30s
 
-  llama:
-    image: ghcr.io/ggml-org/llama.cpp:server
-    command:
-      - --host
-      - 0.0.0.0
-      - --port
-      - "11434"
-      - --hf-repo
-      - ${LLAMA_HF_REPO:-unsloth/gemma-4-E2B-it-GGUF}
-      - --hf-file
-      - ${LLAMA_HF_FILE:-gemma-4-E2B-it-BF16.gguf}
-      - --alias
-      - ${LLAMA_MODEL_ALIAS:-gemma-4-E2B}
-      - --ctx-size
-      - ${LLAMA_CTX_SIZE:-128000}
-      - --n-gpu-layers
-      - ${LLAMA_GPU_LAYERS:--1}
+  ollama:
+    image: ollama/ollama:latest
     environment:
-      XDG_CACHE_HOME: /models
-      HF_HOME: /models
+      OLLAMA_HOST: "0.0.0.0"
     volumes:
-      - ./services/llama/models:/models
+      - ollama-models:/root/.ollama
     networks: [agent_network]
+    entrypoint: ["/bin/sh", "-c", "ollama serve & until curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; do sleep 2; done && ollama pull ${OLLAMA_MODEL:-gemma4:e2b} && wait"]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/health | grep -q '\"status\":\"ok\"'"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
+      # Pass only once the model is fully pulled and listed
+      test: ["CMD-SHELL", "ollama list | grep -q '${OLLAMA_MODEL:-gemma4}' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 80
       start_period: 30s
-    restart: unless-stopped
 
   kokoro:
     image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
@@ -108,15 +94,15 @@ services:
       API_BASE_URL: http://api:4000
       STT_BASE_URL: http://nemotron:8000/v1
       STT_MODEL: nemotron-speech-streaming
-      LLAMA_BASE_URL: http://llama:11434/v1
-      LLAMA_MODEL: ${LLAMA_MODEL:-gemma-4-E2B}
+      OLLAMA_BASE_URL: http://ollama:11434/v1
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:e2b}
       KOKORO_BASE_URL: http://kokoro:8880/v1
       KOKORO_VOICE: ${KOKORO_VOICE:-af_nova}
     networks: [agent_network]
     depends_on:
       livekit:   { condition: service_started }
       nemotron:  { condition: service_healthy }
-      llama:    { condition: service_healthy }
+      ollama:    { condition: service_healthy }
       kokoro:    { condition: service_started }
       api:       { condition: service_started }
     restart: unless-stopped
