@@ -12,18 +12,7 @@ services:
               count: all
               capabilities: [gpu]
 
-  llama:
-    image: ghcr.io/ggml-org/llama.cpp:server-cuda
-    environment:
-      LLAMA_HOST: "0.0.0.0"
-      CUDA_VISIBLE_DEVICES: "0"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+  # vllm already declares GPU access in docker-compose.yml; nothing to override here.
 
   kokoro:
     image: ghcr.io/remsky/kokoro-fastapi-gpu:latest

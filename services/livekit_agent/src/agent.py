@@ -33,10 +33,18 @@ logging.basicConfig(level=logging.INFO)
 API_BASE = os.environ.get("API_BASE_URL", "http://api:4000")
 STT_BASE = os.environ.get("STT_BASE_URL", "http://nemotron:8000/v1")
 STT_MODEL = os.environ.get("STT_MODEL", "nemotron-speech-streaming")
-LLAMA_BASE = os.environ.get("LLAMA_BASE_URL", "http://llama:11434/v1")
-LLAMA_MODEL = os.environ.get("LLAMA_MODEL", "gemma-4-E2B")
+LLM_BASE = os.environ.get("LLM_BASE_URL", "http://vllm:8000/v1")
+LLM_MODEL = os.environ.get("LLM_MODEL", "gemma")
+LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "150"))
+LLM_TEMPERATURE = float(os.environ.get("LLM_TEMPERATURE", "0.7"))
 KOKORO_BASE = os.environ.get("KOKORO_BASE_URL", "http://kokoro:8880/v1")
 KOKORO_VOICE = os.environ.get("KOKORO_VOICE", "af_nova")
+
+# Latency knobs — see .env for full descriptions.
+RESPONSE_DELAY_S = max(0.0, float(os.environ.get("RESPONSE_DELAY_MS", "0")) / 1000.0)
+MIN_ENDPOINTING_DELAY = float(os.environ.get("MIN_ENDPOINTING_DELAY", "0.5"))
+MAX_ENDPOINTING_DELAY = float(os.environ.get("MAX_ENDPOINTING_DELAY", "3.0"))
+PREEMPTIVE_GENERATION = os.environ.get("PREEMPTIVE_GENERATION", "true").lower() in ("1", "true", "yes")
 
 
 def _extract_text(msg) -> str:
@@ -153,8 +161,15 @@ async def patient_session(ctx: JobContext):
             logger.warning("Could not create session record: %s", exc)
             session_id = None
 
-    # Build agent with patient's system prompt
-    patient_agent = Agent(instructions=system_prompt)
+    # Build agent with patient's system prompt. Override on_user_turn_completed
+    # to inject the optional response delay — runs after the user turn closes
+    # and before LLM generation kicks off.
+    class PatientAgent(Agent):
+        async def on_user_turn_completed(self, turn_ctx, new_message):
+            if RESPONSE_DELAY_S > 0:
+                await asyncio.sleep(RESPONSE_DELAY_S)
+
+    patient_agent = PatientAgent(instructions=system_prompt)
 
     session = AgentSession(
         vad=ctx.proc.userdata["vad"],
@@ -164,9 +179,11 @@ async def patient_session(ctx: JobContext):
             model=STT_MODEL,
         ),
         llm=openai.LLM(
-            base_url=LLAMA_BASE,
-            model=LLAMA_MODEL,
+            base_url=LLM_BASE,
+            model=LLM_MODEL,
             api_key="no-key",
+            temperature=LLM_TEMPERATURE,
+            max_completion_tokens=LLM_MAX_TOKENS,
         ),
         tts=openai.TTS(
             base_url=KOKORO_BASE,
@@ -176,6 +193,9 @@ async def patient_session(ctx: JobContext):
             response_format="pcm",
         ),
         turn_handling=TurnHandlingOptions(turn_detection=MultilingualModel()),
+        min_endpointing_delay=MIN_ENDPOINTING_DELAY,
+        max_endpointing_delay=MAX_ENDPOINTING_DELAY,
+        preemptive_generation=PREEMPTIVE_GENERATION,
     )
 
     # Hook transcript events to save to DB

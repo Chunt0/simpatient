@@ -4,6 +4,7 @@ networks:
 
 volumes:
   nemotron-cache:
+  vllm-cache:
   db-data:
 
 services:
@@ -42,35 +43,59 @@ services:
       retries: 120
       start_period: 30s
 
-  llama:
-    image: ghcr.io/ggml-org/llama.cpp:server
+  # vLLM — GPU-only. With FP8 + prefix caching + chunked prefill it dominates
+  # llama.cpp on TTFT for our workload (system prompt is identical across turns,
+  # so prefix caching skips re-prefilling it every turn).
+  vllm:
+    image: vllm/vllm-openai:latest
     command:
+      - --model
+      - ${VLLM_MODEL:-unsloth/gemma-4-E4B-it}
+      - --served-model-name
+      - ${VLLM_SERVED_NAME:-gemma}
       - --host
       - 0.0.0.0
       - --port
-      - "11434"
-      - --hf-repo
-      - ${LLAMA_HF_REPO:-unsloth/gemma-4-E2B-it-GGUF}
-      - --hf-file
-      - ${LLAMA_HF_FILE:-gemma-4-E2B-it-BF16.gguf}
-      - --alias
-      - ${LLAMA_MODEL_ALIAS:-gemma-4-E2B}
-      - --ctx-size
-      - ${LLAMA_CTX_SIZE:-128000}
-      - --n-gpu-layers
-      - ${LLAMA_GPU_LAYERS:--1}
+      - "8000"
+      - --dtype
+      - ${VLLM_DTYPE:-bfloat16}
+      - --quantization
+      - ${VLLM_QUANTIZATION:-fp8}
+      - --max-model-len
+      - ${VLLM_MAX_MODEL_LEN:-8192}
+      - --gpu-memory-utilization
+      - ${VLLM_GPU_MEM_UTIL:-0.85}
+      - --max-num-seqs
+      - ${VLLM_MAX_NUM_SEQS:-4}
+      - --enable-prefix-caching
+      - --enable-chunked-prefill
+      - --trust-remote-code
     environment:
-      XDG_CACHE_HOME: /models
-      HF_HOME: /models
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
+      VLLM_LOGGING_LEVEL: WARNING
     volumes:
-      - ./services/llama/models:/models
+      - vllm-cache:/root/.cache/huggingface
+    ports:
+      # Exposed for debugging only; the agent reaches vllm over the docker
+      # network at http://vllm:8000. Host 11434 is reserved for systemd ollama.
+      - "11436:8000"
     networks: [agent_network]
+    ipc: host
+    shm_size: "8gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/health | grep -q '\"status\":\"ok\"'"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 30
-      start_period: 30s
+      retries: 60
+      start_period: 120s
     restart: unless-stopped
 
   kokoro:
@@ -108,15 +133,22 @@ services:
       API_BASE_URL: http://api:4000
       STT_BASE_URL: http://nemotron:8000/v1
       STT_MODEL: nemotron-speech-streaming
-      LLAMA_BASE_URL: http://llama:11434/v1
-      LLAMA_MODEL: ${LLAMA_MODEL:-gemma-4-E2B}
+      LLM_BASE_URL: http://vllm:8000/v1
+      LLM_MODEL: ${VLLM_SERVED_NAME:-gemma}
       KOKORO_BASE_URL: http://kokoro:8880/v1
       KOKORO_VOICE: ${KOKORO_VOICE:-af_nova}
+      # Latency knobs (see .env for descriptions)
+      RESPONSE_DELAY_MS: ${RESPONSE_DELAY_MS:-0}
+      MIN_ENDPOINTING_DELAY: ${MIN_ENDPOINTING_DELAY:-0.5}
+      MAX_ENDPOINTING_DELAY: ${MAX_ENDPOINTING_DELAY:-3.0}
+      PREEMPTIVE_GENERATION: ${PREEMPTIVE_GENERATION:-true}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-150}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.7}
     networks: [agent_network]
     depends_on:
       livekit:   { condition: service_started }
       nemotron:  { condition: service_healthy }
-      llama:    { condition: service_healthy }
+      vllm:      { condition: service_healthy }
       kokoro:    { condition: service_started }
       api:       { condition: service_started }
     restart: unless-stopped
