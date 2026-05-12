@@ -1,7 +1,7 @@
 interface PatientFields {
   name: string
   age: number
-  gender: string
+  sex: string
   chiefComplaint: string
   medicalHistory: string
   medications: string
@@ -11,7 +11,7 @@ interface PatientFields {
 }
 
 export function buildSystemPrompt(p: PatientFields): string {
-  return `You are ${p.name}, a ${p.age}-year-old ${p.gender} patient presenting to a hospital.
+  return `You are ${p.name}, a ${p.age}-year-old ${p.sex} patient presenting to a hospital.
 
 Chief complaint: ${p.chiefComplaint}.
 Medical history: ${p.medicalHistory || 'None reported'}.

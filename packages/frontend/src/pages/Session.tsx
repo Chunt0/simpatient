@@ -128,7 +128,7 @@ function SessionInner({ details, onLeave }: SessionInnerProps) {
           <div className="p-4 border-b border-gray-100 bg-blue-50">
             <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Loaded Patient Profile</p>
             <p className="text-lg font-bold text-gray-900">{patient.name}</p>
-            <p className="text-sm text-gray-600">{patient.age} y/o &middot; {patient.gender}</p>
+            <p className="text-sm text-gray-600">{patient.age} y/o &middot; {patient.sex}</p>
           </div>
 
           {/* Clinical details */}

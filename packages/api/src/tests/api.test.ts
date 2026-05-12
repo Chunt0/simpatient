@@ -37,7 +37,7 @@ describe('patients', () => {
     const body = {
       name: 'Margaret Chen',
       age: 62,
-      gender: 'Female',
+      sex: 'Female',
       chiefComplaint: 'Chest pain radiating to left arm',
       medicalHistory: 'Hypertension, Type 2 Diabetes',
       medications: 'Metformin 500mg',
@@ -74,7 +74,7 @@ describe('patients', () => {
     const body = {
       name: 'Margaret Chen',
       age: 63,
-      gender: 'Female',
+      sex: 'Female',
       chiefComplaint: 'Shortness of breath',
       medicalHistory: 'Hypertension',
       medications: 'Lisinopril',
@@ -112,7 +112,7 @@ describe('sessions', () => {
       body: JSON.stringify({
         name: 'Test Patient',
         age: 45,
-        gender: 'Male',
+        sex: 'Male',
         chiefComplaint: 'Headache',
       }),
     })
@@ -206,7 +206,7 @@ describe('token', () => {
       body: JSON.stringify({
         name: 'Token Test Patient',
         age: 30,
-        gender: 'Non-binary',
+        sex: 'Non-binary',
         chiefComplaint: 'Nausea',
       }),
     })

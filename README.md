@@ -260,7 +260,7 @@ All endpoints accept and return JSON. The base URL is `http://localhost:4000`.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/patients` | List all patients (id, name, age, gender, chiefComplaint, createdAt) |
+| `GET` | `/patients` | List all patients (id, name, age, sex, chiefComplaint, createdAt) |
 | `GET` | `/patients/:id` | Get full patient profile; `systemPrompt` is auto-generated if not set |
 | `POST` | `/patients` | Create a patient |
 | `PUT` | `/patients/:id` | Replace a patient's fields |
@@ -272,7 +272,7 @@ All endpoints accept and return JSON. The base URL is `http://localhost:4000`.
 {
   "name": "Margaret Chen",
   "age": 62,
-  "gender": "Female",
+  "sex": "Female",
   "chiefComplaint": "Chest pain radiating to left arm",
   "medicalHistory": "Hypertension, Type 2 Diabetes",
   "medications": "Metformin 500mg BID",
@@ -283,7 +283,7 @@ All endpoints accept and return JSON. The base URL is `http://localhost:4000`.
 }
 ```
 
-`name`, `age`, `gender`, and `chiefComplaint` are required. All other fields are optional and default to empty string. If `systemPrompt` is empty, the API generates one from the clinical fields.
+`name`, `age`, `sex`, and `chiefComplaint` are required. All other fields are optional and default to empty string. If `systemPrompt` is empty, the API generates one from the clinical fields.
 
 ### Sessions
 
@@ -329,7 +329,7 @@ All endpoints accept and return JSON. The base URL is `http://localhost:4000`.
     "id": "abc-123",
     "name": "Margaret Chen",
     "age": 62,
-    "gender": "Female",
+    "sex": "Female",
     "chiefComplaint": "Chest pain radiating to left arm",
     "vitalSigns": "BP 158/94, HR 88, SpO2 97%",
     "systemPrompt": "You are Margaret Chen, a 62-year-old female patient..."

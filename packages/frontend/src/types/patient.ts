@@ -2,7 +2,7 @@ export interface PatientSummary {
   id: string
   name: string
   age: number
-  gender: string
+  sex: string
   chiefComplaint: string
   createdAt: string
 }
@@ -20,7 +20,7 @@ export interface PatientProfile extends PatientSummary {
 export interface PatientFormData {
   name: string
   age: number
-  gender: string
+  sex: string
   chiefComplaint: string
   medicalHistory: string
   medications: string
@@ -66,7 +66,7 @@ export interface TokenResponse {
     id: string
     name: string
     age: number
-    gender: string
+    sex: string
     chiefComplaint: string
     vitalSigns: string
     systemPrompt: string

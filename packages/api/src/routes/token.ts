@@ -64,7 +64,7 @@ export const tokenRoute = new Elysia()
         id: patient.id,
         name: patient.name,
         age: patient.age,
-        gender: patient.gender,
+        sex: patient.sex,
         chiefComplaint: patient.chiefComplaint,
         vitalSigns: patient.vitalSigns,
         systemPrompt: resolvedPrompt,

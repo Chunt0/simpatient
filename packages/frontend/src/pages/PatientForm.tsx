@@ -8,7 +8,7 @@ import type { PatientFormData } from '../types/patient'
 const defaultForm: PatientFormData = {
   name: '',
   age: 0,
-  gender: '',
+  sex: '',
   chiefComplaint: '',
   medicalHistory: '',
   medications: '',
@@ -59,7 +59,7 @@ export function PatientFormPage() {
       setForm({
         name: existingPatient.name,
         age: existingPatient.age,
-        gender: existingPatient.gender,
+        sex: existingPatient.sex,
         chiefComplaint: existingPatient.chiefComplaint,
         medicalHistory: existingPatient.medicalHistory,
         medications: existingPatient.medications,
@@ -106,8 +106,8 @@ export function PatientFormPage() {
               <input required type="number" min={0} max={120} className={inputClass} value={form.age} onChange={set('age')} />
             </Field>
           </div>
-          <Field label="Gender *">
-            <input required className={inputClass} value={form.gender} onChange={set('gender')} placeholder="e.g. female, male" />
+          <Field label="Sex *">
+            <input required className={inputClass} value={form.sex} onChange={set('sex')} placeholder="e.g. female, male" />
           </Field>
         </section>
 

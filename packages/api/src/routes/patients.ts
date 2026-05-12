@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto'
 const PatientBody = t.Object({
   name: t.String({ minLength: 1 }),
   age: t.Number({ minimum: 0, maximum: 120 }),
-  gender: t.String({ minLength: 1 }),
+  sex: t.String({ minLength: 1 }),
   chiefComplaint: t.String({ minLength: 1 }),
   medicalHistory: t.Optional(t.String()),
   medications: t.Optional(t.String()),
@@ -24,7 +24,7 @@ export const patientsRoutes = new Elysia({ prefix: '/patients' })
       id: patients.id,
       name: patients.name,
       age: patients.age,
-      gender: patients.gender,
+      sex: patients.sex,
       chiefComplaint: patients.chiefComplaint,
       createdAt: patients.createdAt,
     }).from(patients).all()
@@ -46,7 +46,7 @@ export const patientsRoutes = new Elysia({ prefix: '/patients' })
       id,
       name: body.name,
       age: body.age,
-      gender: body.gender,
+      sex: body.sex,
       chiefComplaint: body.chiefComplaint,
       medicalHistory: body.medicalHistory ?? '',
       medications: body.medications ?? '',
@@ -68,7 +68,7 @@ export const patientsRoutes = new Elysia({ prefix: '/patients' })
     const updates = {
       name: body.name,
       age: body.age,
-      gender: body.gender,
+      sex: body.sex,
       chiefComplaint: body.chiefComplaint,
       medicalHistory: body.medicalHistory ?? '',
       medications: body.medications ?? '',

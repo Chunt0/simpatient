@@ -14,7 +14,7 @@ export function PatientCard({ patient, onStart, onEdit, onDelete }: PatientCardP
         <div>
           <h3 className="font-semibold text-gray-900 text-lg">{patient.name}</h3>
           <p className="text-sm text-gray-500">
-            {patient.age} y/o {patient.gender}
+            {patient.age} y/o {patient.sex}
           </p>
         </div>
       </div>

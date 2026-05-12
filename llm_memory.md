@@ -56,7 +56,7 @@ AI patient-simulation platform for nursing education.
 ## Required patient fields
 - `name`
 - `age`
-- `gender`
+- `sex`
 - `chiefComplaint`
 
 ## Local setup

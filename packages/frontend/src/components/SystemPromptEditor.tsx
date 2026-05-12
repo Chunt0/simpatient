@@ -7,7 +7,7 @@ interface SystemPromptEditorProps {
   patientFields: {
     name: string
     age: number | string
-    gender: string
+    sex: string
     chiefComplaint: string
     medicalHistory: string
     medications: string

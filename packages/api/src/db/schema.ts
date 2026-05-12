@@ -4,7 +4,7 @@ export const patients = sqliteTable('patients', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   age: integer('age').notNull(),
-  gender: text('gender').notNull(),
+  sex: text('sex').notNull(),
   chiefComplaint: text('chief_complaint').notNull(),
   medicalHistory: text('medical_history').notNull(),
   medications: text('medications').notNull(),
