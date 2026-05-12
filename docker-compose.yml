@@ -137,6 +137,8 @@ services:
       LLM_MODEL: ${VLLM_SERVED_NAME:-gemma}
       KOKORO_BASE_URL: http://kokoro:8880/v1
       KOKORO_VOICE: ${KOKORO_VOICE:-af_nova}
+      KOKORO_VOICE_FEMALE: ${KOKORO_VOICE_FEMALE:-af_nova}
+      KOKORO_VOICE_MALE: ${KOKORO_VOICE_MALE:-am_michael}
       # Latency knobs (see .env for descriptions)
       RESPONSE_DELAY_MS: ${RESPONSE_DELAY_MS:-0}
       MIN_ENDPOINTING_DELAY: ${MIN_ENDPOINTING_DELAY:-0.5}

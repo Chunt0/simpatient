@@ -39,6 +39,17 @@ LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "150"))
 LLM_TEMPERATURE = float(os.environ.get("LLM_TEMPERATURE", "0.7"))
 KOKORO_BASE = os.environ.get("KOKORO_BASE_URL", "http://kokoro:8880/v1")
 KOKORO_VOICE = os.environ.get("KOKORO_VOICE", "af_nova")
+KOKORO_VOICE_FEMALE = os.environ.get("KOKORO_VOICE_FEMALE", "af_nova")
+KOKORO_VOICE_MALE = os.environ.get("KOKORO_VOICE_MALE", "am_michael")
+
+
+def _voice_for_gender(gender: str | None) -> str:
+    g = (gender or "").strip().lower()
+    if g.startswith("m"):
+        return KOKORO_VOICE_MALE
+    if g.startswith("f"):
+        return KOKORO_VOICE_FEMALE
+    return KOKORO_VOICE
 
 # Latency knobs — see .env for full descriptions.
 RESPONSE_DELAY_S = max(0.0, float(os.environ.get("RESPONSE_DELAY_MS", "0")) / 1000.0)
@@ -149,7 +160,11 @@ async def patient_session(ctx: JobContext):
         return
 
     system_prompt = patient.get("systemPrompt", "")
-    logger.info("Starting session as patient: %s (id=%s)", patient.get("name"), patient_id)
+    voice = _voice_for_gender(patient.get("gender"))
+    logger.info(
+        "Starting session as patient: %s (id=%s, gender=%s, voice=%s)",
+        patient.get("name"), patient_id, patient.get("gender"), voice,
+    )
 
     # Use the session ID created by the token endpoint if available, otherwise create one.
     started_at = datetime.now(timezone.utc).isoformat()
@@ -189,7 +204,7 @@ async def patient_session(ctx: JobContext):
             base_url=KOKORO_BASE,
             api_key="no-key",
             model="tts-1",
-            voice=KOKORO_VOICE,
+            voice=voice,
             response_format="pcm",
         ),
         turn_handling=TurnHandlingOptions(turn_detection=MultilingualModel()),
