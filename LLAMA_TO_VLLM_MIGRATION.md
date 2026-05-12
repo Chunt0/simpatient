@@ -368,3 +368,267 @@ rm -rf services/llama/models/              # if you keep llama.cpp around for fa
 ```
 
 If you keep the `services/llama/` directory as a fallback, leave it; nothing references it any more.
+
+---
+
+# Part 2 — Dynamic voice selection by patient sex
+
+The agent shipped with a single fixed `KOKORO_VOICE`. Pick a male or female voice per patient based on the profile returned by the API so the simulation actually sounds like the patient.
+
+## Step 13 — Add the voice helper in `services/livekit_agent/src/agent.py`
+
+Right after the existing `KOKORO_VOICE` env read, add two more env reads and a small mapper:
+
+```python
+KOKORO_VOICE_FEMALE = os.environ.get("KOKORO_VOICE_FEMALE", "af_nova")
+KOKORO_VOICE_MALE = os.environ.get("KOKORO_VOICE_MALE", "am_michael")
+
+
+def _voice_for_sex(sex: str | None) -> str:
+    g = (sex or "").strip().lower()
+    if g.startswith("m"):
+        return KOKORO_VOICE_MALE
+    if g.startswith("f"):
+        return KOKORO_VOICE_FEMALE
+    return KOKORO_VOICE
+```
+
+In `patient_session(...)`, resolve the voice once from the patient profile, log it, and pass it to the TTS:
+
+```python
+voice = _voice_for_sex(patient.get("sex"))
+logger.info(
+    "Starting session as patient: %s (id=%s, sex=%s, voice=%s)",
+    patient.get("name"), patient_id, patient.get("sex"), voice,
+)
+# ...
+tts=openai.TTS(..., voice=voice, ...)
+```
+
+`KOKORO_VOICE` becomes the fallback for any value that isn't recognizable as male/female (blank, non-binary, etc.).
+
+## Step 14 — Wire the env vars through `docker-compose.yml` + `.env`
+
+In the `livekit_agent:` service env block:
+
+```yaml
+      KOKORO_VOICE: ${KOKORO_VOICE:-af_nova}
+      KOKORO_VOICE_FEMALE: ${KOKORO_VOICE_FEMALE:-af_nova}
+      KOKORO_VOICE_MALE: ${KOKORO_VOICE_MALE:-am_michael}
+```
+
+Append to `.env` and `.env.example`:
+
+```dotenv
+# TTS voice (Kokoro) — KOKORO_VOICE is the fallback when the patient's sex
+# is unknown/non-binary. The agent picks _MALE or _FEMALE based on the patient
+# profile returned by the API.
+KOKORO_VOICE=af_nova
+KOKORO_VOICE_FEMALE=af_nova
+KOKORO_VOICE_MALE=am_michael
+```
+
+## Step 15 — Verify
+
+Rebuild the agent image (the Dockerfile copies `src/` at build time — a plain restart won't pick up code changes), then smoke-test the mapper:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml build livekit_agent
+docker compose up -d livekit_agent
+
+docker compose exec livekit_agent python -c "
+import sys; sys.path.insert(0, '/app/src')
+from agent import _voice_for_sex
+for v in ['Male','female','M','F','non-binary',None,'']:
+    print(f'{v!r:>15} -> {_voice_for_sex(v)}')
+"
+```
+
+`Male`/`M` → `KOKORO_VOICE_MALE`, `female`/`F` → `KOKORO_VOICE_FEMALE`, everything else → `KOKORO_VOICE`.
+
+---
+
+# Part 3 — STT migration: Nemotron → Whisper (speaches)
+
+`nvidia/nemotron-speech-streaming-en-0.6b` is a low-latency streaming model that trades WER for first-token speed, and it was being run on CPU anyway (`torch.stft` hits `CUFFT_INTERNAL_ERROR` on the A6000). Since LiveKit's `openai.STT` plugin batches chunks against `/v1/audio/transcriptions`, the streaming model was paying an accuracy tax for no benefit. Switch to faster-whisper via speaches with `distil-large-v3` (top of the HF Open ASR leaderboard, ~6% WER). CTranslate2 doesn't use `torch.stft`, so GPU mode works on the A6000 too.
+
+## Step 16 — Replace `nemotron:` with `whisper:` + preload sidecar in `docker-compose.yml`
+
+Delete the entire `nemotron:` service block. In the top-level `volumes:` block, rename `nemotron-cache` → `whisper-cache`. Add these two services in its place:
+
+```yaml
+  # OpenAI-compatible Whisper STT (CTranslate2 backend via speaches).
+  # Speaches doesn't auto-download on request — see whisper-preload below,
+  # which fetches the model once at stack-up. To swap models, change
+  # WHISPER_MODEL in .env.
+  whisper:
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    volumes:
+      - whisper-cache:/home/ubuntu/.cache/huggingface
+    ports:
+      - "11435:8000"
+    networks: [agent_network]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # One-shot init: triggers the speaches model download via the management API
+  # and exits. livekit_agent waits for this to succeed before starting, so the
+  # first transcription doesn't 404. Subsequent runs hit the cached volume and
+  # finish in seconds.
+  whisper-preload:
+    image: curlimages/curl:latest
+    command:
+      - sh
+      - -c
+      - |
+        until curl -sf http://whisper:8000/health >/dev/null 2>&1; do sleep 2; done
+        echo "Preloading model: ${WHISPER_MODEL}"
+        curl -fsS -X POST "http://whisper:8000/v1/models/${WHISPER_MODEL}" --max-time 900
+        echo
+        echo "Whisper model ready."
+    environment:
+      WHISPER_MODEL: ${WHISPER_MODEL:-Systran/faster-distil-whisper-large-v3}
+    networks: [agent_network]
+    depends_on:
+      whisper: { condition: service_healthy }
+    restart: "no"
+```
+
+**Why a sidecar instead of env-based preload:** the speaches docs list `PRELOAD_MODELS` as a JSON-list env var, but in the current `latest-cpu`/`latest-cuda` images it's a no-op — no `preload` references in the source, and `/v1/models` stays empty after startup. Without explicit registration the server 404s the first transcription. The sidecar POSTs to `/v1/models/<name>` (which IS implemented), waits for completion, then exits. `livekit_agent` keys off `condition: service_completed_successfully` so it can't start before the model is ready.
+
+## Step 17 — Update `livekit_agent` env + depends_on
+
+```yaml
+      STT_BASE_URL: http://whisper:8000/v1
+      STT_MODEL: ${WHISPER_MODEL:-Systran/faster-distil-whisper-large-v3}
+      # ... other vars ...
+    depends_on:
+      livekit:          { condition: service_started }
+      whisper-preload:  { condition: service_completed_successfully }
+      vllm:             { condition: service_healthy }
+      kokoro:           { condition: service_started }
+      api:              { condition: service_started }
+```
+
+Drop the old `nemotron: { condition: service_healthy }` entry. `whisper` doesn't appear in `depends_on` directly — depending on `whisper-preload` having completed implies whisper is up (since preload waited for it).
+
+## Step 18 — GPU overrides
+
+Faster-whisper uses CTranslate2 (no torch.stft), so the A6000 cuFFT bug doesn't apply. In both `docker-compose.gpu.yml` and `docker-compose.gpu-generic.yml`, replace the `nemotron:` block with a `whisper:` override that switches to the CUDA image:
+
+```yaml
+  whisper:
+    image: ghcr.io/speaches-ai/speaches:latest-cuda
+    environment:
+      CUDA_VISIBLE_DEVICES: "0"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+```
+
+## Step 19 — Add `WHISPER_MODEL` to `.env` / `.env.example`
+
+```dotenv
+# STT model (faster-whisper via speaches). distil-large-v3 is English-only,
+# top of the Open ASR leaderboard at ~6% WER. Alternatives:
+#   Systran/faster-whisper-large-v3        - multilingual, slower
+#   Systran/faster-whisper-large-v3-turbo  - multilingual, fast
+#   Systran/faster-distil-whisper-small.en - tiny, for low-resource hosts
+WHISPER_MODEL=Systran/faster-distil-whisper-large-v3
+```
+
+## Step 20 — Verify
+
+```bash
+# Configs parse for all three modes
+for f in "" "-f docker-compose.gpu.yml" "-f docker-compose.gpu-generic.yml"; do
+  docker compose -f docker-compose.yml $f config --quiet && echo "OK: $f"
+done
+
+# Boot whisper-preload (it pulls whisper as a dep) and watch for clean exit
+docker compose up -d whisper-preload
+until s=$(docker inspect -f '{{.State.Status}}' simpatient-whisper-preload-1); [ "$s" = "exited" ]; do sleep 5; done
+docker inspect -f '{{.State.ExitCode}}' simpatient-whisper-preload-1   # → 0
+curl -sf http://localhost:11435/v1/models | grep distil-whisper        # → matches
+
+# Real transcription (any wav works; speech yields actual text)
+ffmpeg -f lavfi -i 'sine=frequency=440:duration=1' -ac 1 -ar 16000 -y /tmp/t.wav
+curl -sS -X POST http://localhost:11435/v1/audio/transcriptions \
+  -F "file=@/tmp/t.wav" \
+  -F "model=Systran/faster-distil-whisper-large-v3"
+# → {"text":""}  (silence/sine has no speech, expected)
+```
+
+## Step 21 — Cleanup
+
+```bash
+docker rm simpatient-nemotron-1 2>/dev/null
+docker image rm simpatient-nemotron 2>/dev/null
+docker volume rm simpatient_nemotron-cache 2>/dev/null
+rm -rf services/nemotron/   # leave if you might roll back
+```
+
+Sweep `README.md` for stale nemotron / Ollama mentions: services table, ports table, architecture diagram, the dev-mode quickstart command, the GPU section, and the disk-requirements line. Both need updating since the project also moved off Ollama in Part 1.
+
+---
+
+# Part 4 — Rename DB column `gender` → `sex`
+
+Pure rename. SQLite supports `ALTER TABLE … RENAME COLUMN` since 3.25, so no DB wipe is needed — a migration block at API boot renames in place for any existing volume, and fresh DBs get `sex` from `CREATE TABLE` directly.
+
+## Step 22 — Schema + idempotent migration
+
+`packages/api/src/db/schema.ts`:
+
+```typescript
+sex: text('sex').notNull(),
+```
+
+`packages/api/src/db/migrate.ts` — change `gender TEXT NOT NULL` in the `CREATE TABLE patients` block to `sex TEXT NOT NULL`, then add the rename guard right after that `CREATE`:
+
+```typescript
+// Idempotent rename for older databases that still have the 'gender' column.
+const patientCols = sqlite.prepare('PRAGMA table_info(patients)').all() as { name: string }[]
+if (patientCols.some(c => c.name === 'gender') && !patientCols.some(c => c.name === 'sex')) {
+  sqlite.exec('ALTER TABLE patients RENAME COLUMN gender TO sex')
+  console.log('[db] renamed patients.gender -> patients.sex')
+}
+```
+
+Fresh DB: `CREATE` creates `sex`, the if-guard is false, no-op. Existing DB: `CREATE` no-ops on the existing table, the if-guard is true, in-place rename.
+
+## Step 23 — Sweep every `gender` identifier to `sex`
+
+Every reference outside the migration block is a mechanical rename. Touchpoints:
+
+- **API**: `routes/patients.ts` (body schema, list select, POST/PUT row), `routes/token.ts` (response patient block), `lib/promptBuilder.ts` (type + template string), `tests/api.test.ts` (4 fixtures).
+- **Frontend**: `types/patient.ts` (3 interfaces — `PatientSummary`, `PatientFormData`, `TokenResponse.patient`), `lib/promptBuilder.ts`, `pages/PatientForm.tsx` (default form, load-existing copy, and the visible `Sex *` label), `pages/Session.tsx`, `components/PatientCard.tsx`, `components/SystemPromptEditor.tsx`.
+- **Agent**: `services/livekit_agent/src/agent.py` — `_voice_for_gender` → `_voice_for_sex`, `patient.get("gender")` → `patient.get("sex")`, log key `gender=%s` → `sex=%s`.
+- **Docs**: `README.md` (API examples), `.env` / `.env.example` (the voice-selection comment), `llm_memory.md`.
+
+Sanity sweep:
+
+```bash
+grep -rn 'gender\|Gender' --include="*.ts" --include="*.tsx" --include="*.py" \
+   --include="*.md" --include="*.yml" --include=".env*" .
+# Only matches should be inside migrate.ts (intentional — the rename detector).
+```
+
+## Step 24 — Verify
+
+```bash
+bun install
+( cd packages/frontend && bunx tsc -b --noEmit ) && echo "frontend OK"
+( cd packages/api      && bunx tsc    --noEmit ) && echo "api OK"
+bun test packages/api/src/tests/api.test.ts
+```
+
+On the next API boot against an existing volume the log should print `[db] renamed patients.gender -> patients.sex` exactly once. Subsequent boots stay silent — the guard's now false.
