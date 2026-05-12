@@ -1,9 +1,6 @@
 services:
-  nemotron:
-    build:
-      args:
-        NEMOTRON_BASE: nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
-        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu124
+  whisper:
+    image: ghcr.io/speaches-ai/speaches:latest-cuda
     deploy:
       resources:
         reservations:

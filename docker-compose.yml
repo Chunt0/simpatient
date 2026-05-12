@@ -3,7 +3,7 @@ networks:
     driver: bridge
 
 volumes:
-  nemotron-cache:
+  whisper-cache:
   vllm-cache:
   db-data:
 
@@ -24,24 +24,45 @@ services:
       - "50000-50200:50000-50200/udp"
     networks: [agent_network]
 
-  nemotron:
-    build:
-      context: ./services/nemotron
-      dockerfile: Dockerfile
-    environment:
-      NEMOTRON_MODEL_NAME: nvidia/nemotron-speech-streaming-en-0.6b
-      NEMOTRON_MODEL_ID: nemotron-speech-streaming
+  # OpenAI-compatible Whisper STT (CTranslate2 backend via speaches).
+  # Speaches doesn't auto-download on request — see whisper-preload below,
+  # which fetches the model once at stack-up. To swap models, change
+  # WHISPER_MODEL in .env.
+  whisper:
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
     volumes:
-      - nemotron-cache:/root/.cache/huggingface
+      - whisper-cache:/home/ubuntu/.cache/huggingface
     ports:
       - "11435:8000"
     networks: [agent_network]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health | python3 -c \"import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('model_loaded') else 1)\""]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 120
+      retries: 30
       start_period: 30s
+
+  # One-shot init: triggers the speaches model download via the management API
+  # and exits. livekit_agent waits for this to succeed before starting, so the
+  # first transcription doesn't 404. Subsequent runs hit the cached volume and
+  # finish in seconds.
+  whisper-preload:
+    image: curlimages/curl:latest
+    command:
+      - sh
+      - -c
+      - |
+        until curl -sf http://whisper:8000/health >/dev/null 2>&1; do sleep 2; done
+        echo "Preloading model: ${WHISPER_MODEL}"
+        curl -fsS -X POST "http://whisper:8000/v1/models/${WHISPER_MODEL}" --max-time 900
+        echo
+        echo "Whisper model ready."
+    environment:
+      WHISPER_MODEL: ${WHISPER_MODEL:-Systran/faster-distil-whisper-large-v3}
+    networks: [agent_network]
+    depends_on:
+      whisper: { condition: service_healthy }
+    restart: "no"
 
   # vLLM — GPU-only. With FP8 + prefix caching + chunked prefill it dominates
   # llama.cpp on TTFT for our workload (system prompt is identical across turns,
@@ -131,8 +152,8 @@ services:
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
       API_BASE_URL: http://api:4000
-      STT_BASE_URL: http://nemotron:8000/v1
-      STT_MODEL: nemotron-speech-streaming
+      STT_BASE_URL: http://whisper:8000/v1
+      STT_MODEL: ${WHISPER_MODEL:-Systran/faster-distil-whisper-large-v3}
       LLM_BASE_URL: http://vllm:8000/v1
       LLM_MODEL: ${VLLM_SERVED_NAME:-gemma}
       KOKORO_BASE_URL: http://kokoro:8880/v1
@@ -148,11 +169,11 @@ services:
       LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.7}
     networks: [agent_network]
     depends_on:
-      livekit:   { condition: service_started }
-      nemotron:  { condition: service_healthy }
-      vllm:      { condition: service_healthy }
-      kokoro:    { condition: service_started }
-      api:       { condition: service_started }
+      livekit:          { condition: service_started }
+      whisper-preload:  { condition: service_completed_successfully }
+      vllm:             { condition: service_healthy }
+      kokoro:           { condition: service_started }
+      api:              { condition: service_started }
     restart: unless-stopped
 
   frontend:

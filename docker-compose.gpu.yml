@@ -1,7 +1,18 @@
 services:
-  # nemotron uses CPU build even in GPU mode — torch.stft / cuFFT triggers
-  # CUFFT_INTERNAL_ERROR on RTX A6000; CPU inference is fast enough for STT
-  #
+  # whisper uses the CTranslate2 backend (not PyTorch), so it sidesteps the
+  # torch.stft / cuFFT bug that bites nemotron and kokoro-gpu on the A6000.
+  whisper:
+    image: ghcr.io/speaches-ai/speaches:latest-cuda
+    environment:
+      CUDA_VISIBLE_DEVICES: "0"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
   # vllm has GPU access declared directly in docker-compose.yml since it
   # requires a GPU to run. This override file only pins CUDA_VISIBLE_DEVICES
   # to GPU 0 in case of multi-GPU hosts.

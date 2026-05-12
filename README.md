@@ -29,12 +29,12 @@ AI-powered patient simulation platform for nursing education. Students hold a re
 
 3. **The agent joins.** The LiveKit Python agent picks up the new room, reads the patient ID from room metadata, fetches the full patient profile from the API, and creates a session record in the database. It then starts an `AgentSession` running:
    - **VAD** — Silero voice activity detection (prewarmed at agent startup)
-   - **STT** — NVIDIA Nemotron NeMo ASR (OpenAI-compatible, served locally)
-   - **LLM** — Ollama with `gemma4:e2b` (OpenAI-compatible, served locally)
+   - **STT** — faster-whisper via speaches, default `distil-large-v3` (OpenAI-compatible, served locally)
+   - **LLM** — vLLM with `unsloth/gemma-4-E4B-it` (OpenAI-compatible, served locally)
    - **TTS** — Kokoro FastAPI (OpenAI-compatible, served locally)
    - **Turn detection** — LiveKit multilingual turn detector
 
-4. **The conversation.** The student speaks; the agent transcribes with Nemotron, reasons with Ollama (using the patient's system prompt as instructions), and responds with Kokoro TTS. Both sides of the conversation are visible in real time in the browser's transcript panel.
+4. **The conversation.** The student speaks; the agent transcribes with Whisper, reasons with vLLM (using the patient's system prompt as instructions), and responds with Kokoro TTS. Both sides of the conversation are visible in real time in the browser's transcript panel.
 
 5. **Transcript saving.** The agent hooks into `user_speech_committed` and `agent_speech_committed` events on the `AgentSession` object. Each finalized turn is saved to SQLite via the API (`POST /sessions/:id/entries`) as it happens.
 
@@ -58,8 +58,8 @@ AI-powered patient simulation platform for nursing education. Students hold a re
 │                               │                              │
 │                    ┌──────────┘                              │
 │                    │  Python Agent (livekit-agents 1.3)      │
-│                    │  ├── STT: Nemotron NeMo :11435/8000     │
-│                    │  ├── LLM: Ollama gemma4:e2b :11434      │
+│                    │  ├── STT: Whisper (speaches) :11435     │
+│                    │  ├── LLM: vLLM gemma-4-E4B :11436       │
 │                    │  └── TTS: Kokoro FastAPI :8880          │
 │                    │  └── saves transcript ──► API :4000     │
 └─────────────────────────────────────────────────────────────┘
@@ -75,7 +75,7 @@ All services communicate over a Docker bridge network (`agent_network`) using th
 |---|---|
 | Docker Engine 24+ | With Compose v2 (`docker compose`) |
 | 16 GB RAM | 8 GB minimum; model loading is RAM-heavy on CPU |
-| 20 GB disk | For model weights (Nemotron + Ollama) |
+| 20 GB disk | For model weights (Whisper + vLLM) |
 | NVIDIA GPU (optional) | Requires `nvidia-container-toolkit` for GPU mode |
 
 For local development (outside Docker):
@@ -100,10 +100,10 @@ cp .env.example .env
 ```
 
 On first run, Docker builds all images, then:
-- **Ollama** pulls `gemma4:e2b` (~3 GB)
-- **Nemotron** downloads `nvidia/nemotron-speech-streaming-en-0.6b` from Hugging Face (~350 MB)
+- **vLLM** downloads `unsloth/gemma-4-E4B-it` from Hugging Face (~3 GB)
+- **Whisper** downloads `Systran/faster-distil-whisper-large-v3` on the first transcription (~750 MB)
 
-This can take 5–15 minutes depending on your internet connection. The `livekit_agent` service waits for both `nemotron` and `ollama` to pass their healthchecks before starting.
+This can take 5–15 minutes depending on your internet connection. The `livekit_agent` service waits for `whisper` and `vllm` to pass their healthchecks before starting.
 
 Once everything is up, open **http://localhost:3000**.
 
@@ -127,7 +127,7 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
 | API | 4000 | `http://api:4000` | REST API + SQLite |
 | LiveKit | 7880 | `ws://livekit:7880` | WebRTC signaling |
 | LiveKit (TCP) | 7881 | — | WebRTC TURN/TCP |
-| Nemotron STT | 11435 | `http://nemotron:8000` | NeMo ASR (`/v1/audio/transcriptions`) |
+| Whisper STT | 11435 | `http://whisper:8000` | faster-whisper via speaches (`/v1/audio/transcriptions`) |
 | Ollama LLM | 11434 | `http://ollama:11434` | OpenAI-compatible LLM (`/v1/chat/completions`) |
 | Kokoro TTS | 8880 | `http://kokoro:8880` | OpenAI-compatible TTS (`/v1/audio/speech`) |
 
@@ -166,10 +166,10 @@ Run the inference stack via Docker, then develop the API and frontend with hot r
 
 ```bash
 # Start only the inference + signaling services
-docker compose up livekit nemotron ollama kokoro -d
+docker compose up livekit whisper vllm kokoro -d
 
-# Wait for Ollama model pull and Nemotron model load (~5 min first time)
-docker compose logs -f ollama nemotron
+# Wait for vLLM model load and Whisper warmup (~5 min first time)
+docker compose logs -f vllm whisper
 ```
 
 **API** (port 4000):
@@ -245,11 +245,9 @@ simpatient/
 │               └── promptBuilder.ts   # Client-side prompt preview
 │
 └── services/
-    ├── livekit_agent/            # Python voice agent
-    │   └── src/
-    │       └── agent.py          # AgentServer, session loop, transcript saving
-    └── nemotron/                 # OpenAI-compatible NeMo ASR server
-        └── server.py             # FastAPI wrapper for nemotron-speech-streaming
+    └── livekit_agent/            # Python voice agent
+        └── src/
+            └── agent.py          # AgentServer, session loop, transcript saving
 ```
 
 ---
@@ -384,7 +382,7 @@ bunx tsc --noEmit
 
 ## GPU Support
 
-The `docker-compose.gpu.yml` override file adds NVIDIA GPU reservations to the `nemotron`, `ollama`, and `kokoro` services, and switches Kokoro to the GPU image. Nemotron also rebuilds from a CUDA base image.
+The `docker-compose.gpu.yml` override file pins `vllm` to GPU 0 and switches `whisper` to the CUDA image of speaches. `kokoro` stays on the CPU image in this mode because its GPU build hits a cuFFT bug on the A6000. Use `docker-compose.gpu-generic.yml` instead to run every service on GPU on hardware that's not affected by that bug.
 
 **Requirements:**
 - NVIDIA drivers installed on the host
@@ -398,7 +396,7 @@ The `docker-compose.gpu.yml` override file adds NVIDIA GPU reservations to the `
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
 ```
 
-GPU mode significantly reduces LLM inference latency and Nemotron transcription time.
+GPU mode significantly reduces LLM inference latency and Whisper transcription time.
 
 ---
 
